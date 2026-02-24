@@ -106,14 +106,46 @@ skill subdirectory path."
         (agent-skills--skill-dirs expanded))))
    dirs))
 
+(defun agent-skills--strip-frontmatter (text)
+  "Remove YAML frontmatter from TEXT, returning the body content."
+  (if (string-match "\\`---\n\\(?:.*\n\\)*?---\n" text)
+      (string-trim-left (substring text (match-end 0)))
+    text))
+
+(defun agent-skills--list-skill-files (dir)
+  "Return a list of relative file paths in DIR, excluding SKILL.md."
+  (let ((default-directory dir)
+        result)
+    (dolist (file (directory-files-recursively dir "." t))
+      (let ((rel (file-relative-name file dir)))
+        (unless (string= rel "SKILL.md")
+          (push rel result))))
+    (nreverse result)))
+
 (defun agent-skills--load-skill (skills name)
   "Load the SKILL.md contents for skill NAME from SKILLS.
 SKILLS is the object returned by `agent-skills-create'.
-Returns the full file contents as a string."
+Returns the skill content formatted in the OpenCode skill_content
+format, including the skill body and a listing of bundled files."
   (let ((entry (seq-find (lambda (s) (equal (alist-get 'name s) name)) skills)))
     (unless entry
       (error "No skill named %s" name))
-    (agent-skills--read-file (expand-file-name "SKILL.md" (alist-get 'path entry)))))
+    (let* ((skill-dir (alist-get 'path entry))
+           (contents (agent-skills--read-file (expand-file-name "SKILL.md" skill-dir)))
+           (body (agent-skills--strip-frontmatter contents))
+           (files (agent-skills--list-skill-files skill-dir))
+           (files-str (mapconcat (lambda (f) (format "<file>%s</file>" f)) files "\n")))
+      (concat
+       (format "<skill_content name=\"%s\">\n" name)
+       (format "# Skill: %s\n\n" name)
+       body "\n\n"
+       (format "Base directory for this skill: %s\n" skill-dir)
+       "Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.\n"
+       "Note: file list is sampled.\n\n"
+       "<skill_files>\n"
+       files-str "\n"
+       "</skill_files>\n"
+       "</skill_content>"))))
 
 (defun agent-skills--format-description (skills)
   "Format the tool description string for SKILLS.
